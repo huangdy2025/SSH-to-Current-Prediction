@@ -78,7 +78,7 @@ def parse_args():
     parser.add_argument('--loss_ignore_nan', action='store_true', default=False,
                         help='Whether to ignore nan values in loss')
 
-    parser.add_argument('--model_savepath', type=str, default="/data/hdy/workspace/SSH-Prediction-in-the-SCS/output/")
+    parser.add_argument('--model_savepath', type=str, default="/data/hdy/workspace/SSH-to-Current-Prediction/output/")
 
     # 随机种子
     parser.add_argument('--SEED', type=int, default=42)
@@ -228,7 +228,7 @@ def get_my_config(args_, model_config=None):
         if args.area == 'scs':
             args.base = '/data/hdy/workspace/data/scs/'
             args.wind_path = '/data/hdy/workspace/data/scs/wind_240.nc'
-            args.model_savepath = '/data/hdy/workspace/SSH-Prediction-in-the-SCS/output/scs/'
+            args.model_savepath = '/data/hdy/workspace/SSH-to-Current-Prediction/output/scs/'
         elif args.area == 'indian':
             args.base = '/data/hjj/ssh_prediction/data/ssh_data/AVISO_0.125deg_indian_ocean'
             args.model_savepath = '/data/hjj/ssh_prediction/work_dir/indian_ocean'
@@ -266,7 +266,7 @@ def get_my_config(args_, model_config=None):
     args.file_name = 'var'
     args.input_channels = 0
     args.output_channels = 0
-    args.evaluate_wind = args.need_wind  # need_wind=True 时 target 带风场用于评估；否则只取 ssh
+    args.evaluate_wind = False  # False: 风场作为模型输入(input_channels含wind),target只取ssh; True会致通道不匹配
 
     if args.need_ssh:
         args.input_channels += 1

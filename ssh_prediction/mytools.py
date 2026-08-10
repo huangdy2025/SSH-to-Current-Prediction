@@ -6,7 +6,7 @@ from torch.amp import autocast
 import random
 import os
 import math
-from configs import get_my_config, parse_args
+from ssh_prediction.configs import get_my_config, parse_args
 
 class ConfigObject:
     """将字典转换为对象的包装类"""

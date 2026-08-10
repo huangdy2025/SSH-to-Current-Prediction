@@ -5,7 +5,7 @@ import dask.array as da
 import  numpy as np
 import re
 from pathlib import Path
-from configs import get_my_config, parse_args
+from ssh_prediction.configs import get_my_config, parse_args
 args_ = parse_args()
 args = get_my_config(args_)
 xr.set_options(file_cache_maxsize=500)

@@ -4,9 +4,9 @@ import numpy as np
 from pathlib import Path
 import re
 
-from tools.base_method import Model
-from mytools import MSELossIgnoreNaN, set_all_seeds, MaskPearsonCorr
-from configs import parse_args, get_my_config
+from ssh_prediction.tools.base_method import Model
+from ssh_prediction.mytools import MSELossIgnoreNaN, set_all_seeds, MaskPearsonCorr
+from ssh_prediction.configs import parse_args, get_my_config
 from models import (
     PredFormer_Model,
     Mask_PredFormer_Model,
@@ -15,7 +15,7 @@ from models import (
     ReST_Model,
     STED_Model
 )
-from dataset import MvDataset
+from ssh_prediction.dataset import MvDataset
 from iterable_dataset import MakeIterDataset
 
 

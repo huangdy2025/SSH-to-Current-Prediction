@@ -3,7 +3,7 @@ from thop import profile  # 需要安装: pip install thop
 import torch
 import csv
 import os
-from configs import parse_args, get_my_config
+from ssh_prediction.configs import parse_args, get_my_config
 # from test_cp import benchmark_model
 from models import PredFormer_Model, SimVP_Model, RNN
 

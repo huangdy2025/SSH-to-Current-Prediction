@@ -11,7 +11,7 @@ vars = [vars[0]]
 
 
 need_wind = [False,True]
-need_wind = [need_wind[0]]
+need_wind = [need_wind[1]]  # True: 启用风场(u10,v10)作为输入
 
 norms = [False, True]
 norms = [norms[1]]
@@ -62,7 +62,7 @@ for st in start_time:
                                             for patch in patches:
 
                                                 cmd_parts = [
-                                                            "python3 -m tools.trainers",
+                                                            "python3 -m ssh_prediction.tools.trainers",
                                                             "--batch_size_train 4",
                                                             f"--model_name {model_name}",
                                                             f"--patch_size {patch}",

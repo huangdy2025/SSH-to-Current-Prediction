@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from mytools import convert_configs
+from ssh_prediction.mytools import convert_configs
 
 
 class GatedConv2d(nn.Module):

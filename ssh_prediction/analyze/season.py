@@ -1,7 +1,7 @@
 import numpy as np
 import csv
-from mytools import MaskPearsonCorrNP
-from configs import parse_args, get_my_config
+from ssh_prediction.mytools import MaskPearsonCorrNP
+from ssh_prediction.configs import parse_args, get_my_config
 
 args = parse_args()
 config = get_my_config(args)

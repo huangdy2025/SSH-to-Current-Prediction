@@ -1,7 +1,7 @@
 import numpy as np
 from pathlib import Path
-from mytools import MaskPearsonCorrNP, MSELossIgnoreNaN, MaskPearsonCorr
-from configs import parse_args, get_my_config
+from ssh_prediction.mytools import MaskPearsonCorrNP, MSELossIgnoreNaN, MaskPearsonCorr
+from ssh_prediction.configs import parse_args, get_my_config
 import  torch
 
 args = parse_args()

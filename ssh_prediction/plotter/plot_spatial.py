@@ -345,8 +345,8 @@ if __name__ == "__main__":
        - seasonal_diff.png: 任务 2 - 季节性差异分析
     """
     import numpy as np
-    from configs import parse_args, get_my_config
-    from dataset import MvDataset
+    from ssh_prediction.configs import parse_args, get_my_config
+    from ssh_prediction.dataset import MvDataset
 
     args_ = parse_args()
     args_.need_ssh = True

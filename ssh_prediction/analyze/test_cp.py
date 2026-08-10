@@ -51,9 +51,9 @@ def benchmark_model(model, input_size, device="cuda"):
     print(f"最大显存保留: {memory_reserved:.2f} MB")
 
 if __name__ == "__main__":
-    from tools.base_method import Model
+    from ssh_prediction.tools.base_method import Model
     from models import PredFormer_Model, Mask_PredFormer_Model, SimVP_Model, RNN, ReST
-    from configs import parse_args,get_my_config
+    from ssh_prediction.configs import parse_args,get_my_config
     import numpy as np
 
     args_ = parse_args()

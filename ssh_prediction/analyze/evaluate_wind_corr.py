@@ -4,7 +4,7 @@ import scipy.stats as stats
 import torch
 from torch.utils.data import DataLoader
 from plotter.spatial_plotter import PlotterMultiPanel
-from mytools import MaskPearsonCorr, unpatchify_with_batch
+from ssh_prediction.mytools import MaskPearsonCorr, unpatchify_with_batch
 
 
 # ==============================
@@ -193,10 +193,10 @@ class WindStressAnalyzer:
 # main
 # ==============================
 if __name__ == "__main__":
-    from configs import parse_args, get_my_config
-    from dataset import MvDataset
-    from tools.base_method import Model
-    from mytools import set_all_seeds
+    from ssh_prediction.configs import parse_args, get_my_config
+    from ssh_prediction.dataset import MvDataset
+    from ssh_prediction.tools.base_method import Model
+    from ssh_prediction.mytools import set_all_seeds
     import numpy as np
     from models import SimVP_Model, RNN
 

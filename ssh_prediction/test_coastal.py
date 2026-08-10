@@ -1,11 +1,11 @@
 import numpy as np
 from scipy.ndimage import distance_transform_edt
-from mytools import  MSELossIgnoreNaNv2, set_all_seeds
-from configs import parse_args, get_my_config
-from dataset import MvDataset
+from ssh_prediction.mytools import  MSELossIgnoreNaNv2, set_all_seeds
+from ssh_prediction.configs import parse_args, get_my_config
+from ssh_prediction.dataset import MvDataset
 import torch
 from torch.utils.data import DataLoader
-from tools.trainers import Trainer, TrainerMask
+from ssh_prediction.tools.trainers import Trainer, TrainerMask
 from models import PredFormer_Model, Mask_PredFormer_Model, SimVP_Model, RNN
 
 

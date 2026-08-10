@@ -1,9 +1,9 @@
 
-from tools.base_method import BaseMethod
+from ssh_prediction.tools.base_method import BaseMethod
 import torch
 import numpy as np
 from torch.amp import autocast
-from mytools import  reverse_schedule_sampling,convert_configs, MSELossIgnoreNaN, compute_geostrophic_current, unpatchify_with_batch
+from ssh_prediction.mytools import  reverse_schedule_sampling,convert_configs, MSELossIgnoreNaN, compute_geostrophic_current, unpatchify_with_batch
 import torch.nn as nn
 
 class Model(BaseMethod):
@@ -109,12 +109,12 @@ class ReModel(Model):
 
 if __name__ == '__main__':
     from torch.optim.lr_scheduler import ReduceLROnPlateau
-    from configs import parse_args,get_my_config
+    from ssh_prediction.configs import parse_args,get_my_config
     from models import PredFormer_Model, Mask_PredFormer_Model, SimVP_Model, RNN
-    from dataset import MvDataset
+    from ssh_prediction.dataset import MvDataset
     import time
     import os
-    from mytools import set_all_seeds
+    from ssh_prediction.mytools import set_all_seeds
 
     # torch.autograd.set_detect_anomaly(True)
 
