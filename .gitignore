@@ -216,3 +216,11 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# Training outputs (model weights, logs, loss curves)
+output/
+
+# Data files (not version controlled)
+*.nc
+*.npy
+*.npz

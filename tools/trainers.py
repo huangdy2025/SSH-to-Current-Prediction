@@ -43,16 +43,18 @@ class Model(BaseMethod):
         """
         # 计算预测和真实的地转流以及权重
         mask = self.mask_land.expand_as(targets)
+        targets = targets.clone()
         targets[mask] = torch.nan
         ssh_concate = torch.cat([targets[:, :, :1],  preds[:, :, :1]], dim=2)
-        u, v, w = compute_geostrophic_current(ssh_concate, self.lon, self.lat, if_solid_f= False) #todo
+        u, v, w = compute_geostrophic_current(ssh_concate, self.lon, self.lat, if_solid_f= True) #todo
 
         u_true, u_pred = u[:, :, 0], u[:, :, 1]
         v_true, v_pred = v[:, :, 0], v[:, :, 1]
 
         # 标准化
-        if self.stds.ndim == 0:
-            ssh_std, u_std, v_std = self.stds.item(), 0.23, 0.23
+        if isinstance(self.stds, (int, float)) or (hasattr(self.stds, 'ndim') and self.stds.ndim == 0):
+            ssh_std = float(self.stds) if isinstance(self.stds, (int, float)) else self.stds.item()
+            u_std, v_std = 0.23, 0.23
         else:
             ssh_std, u_std, v_std = self.stds
         u_norm_pred = (u_pred * ssh_std / u_std)
@@ -108,20 +110,22 @@ class ReModel(Model):
 if __name__ == '__main__':
     from torch.optim.lr_scheduler import ReduceLROnPlateau
     from configs import parse_args,get_my_config
-    from models import PredFormer_Model, Mask_PredFormer_Model, SimVP_Model, RNN, ReST_Model, STED_Model
+    from models import PredFormer_Model, Mask_PredFormer_Model, SimVP_Model, RNN
     from dataset import MvDataset
     import time
     import os
     from mytools import set_all_seeds
 
-    # os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
+    # torch.autograd.set_detect_anomaly(True)
+
+    os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "expandable_segments:True"
 
     args_ = parse_args()
 
     args = get_my_config(args_)
 
     set_all_seeds(args.SEED)
-    mask_land = torch.from_numpy(np.load(args.path_land_mask))  # (H,W) 1: invalid, 0: valid
+    mask_land = torch.from_numpy(args.mask_land)  # (H,W) True: invalid(陆地), False: valid(海洋)
 
     if args.model_name == 'predformer':
         if args.mask_predformer:
@@ -133,11 +137,9 @@ if __name__ == '__main__':
     elif args.model_name == 'predrnn':
         model = RNN(args.model_config)
     elif args.model_name == 'rest':
-        model = ReST_Model(**args.model_config)
-    elif args.model_name == 'sted':
-        model = STED_Model(**args.model_config)
+        raise ImportError("ReST.py 在 fork 仓库中缺失，无法使用 rest 模型，请补充该文件")
 
-
+    norm = False #todo
     train_dataset = MvDataset(args, mode='train',norm=args.norm)
     eval_dataset = MvDataset(args, mode='eval',norm=args.norm)
     test_dataset = MvDataset(args, mode='test',norm=args.norm)
@@ -146,7 +148,7 @@ if __name__ == '__main__':
     if lon.ndim == 1 and lat.ndim == 1:
         lon, lat = np.meshgrid(lon, lat)
 
-    stds = np.load(args.path_stds)
+    stds = args.ssh_std
 
     log_dir = rf"{args.model_savepath}/{model.__class__.__name__}_seed{args.SEED}/{args.file_name}_{time.strftime('%Y%m%d_%H%M')}"
     os.makedirs(log_dir, exist_ok=True)

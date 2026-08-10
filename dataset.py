@@ -28,7 +28,7 @@ class MvDataset(Dataset):
 
         if args.need_ssh:
 
-            self.adt = np.expand_dims(self.data.adt.values.astype(np.float32), axis=1)
+            self.adt = np.expand_dims(self.data.zos.values.astype(np.float32), axis=1)
             if self.field is None:
                 self.field = self.adt
             else:
@@ -41,11 +41,11 @@ class MvDataset(Dataset):
             # del self.uo, self.vo
 
         # ssh data and ugos, vgos were not been  normalized
-        self.mean = np.load(args.path_means)
-        self.std = np.load(args.path_stds)
+        self.mean = args.ssh_mean
+        self.std = args.ssh_std
         if norm:
             print(self.field.shape)
-            print(self.mean.shape)
+            print(np.shape(self.mean))
             print(f"mean: {self.mean}, std: {self.std}")
             for i in range(self.field.shape[1]):
                 if isinstance(self.mean, (int, float, np.number)):
@@ -64,7 +64,7 @@ class MvDataset(Dataset):
             del self.u10, self.v10
 
         if args.need_mask:
-            mask = np.load(args.path_land_mask)
+            mask = args.mask_land
             mask = mask[None,None,...]
             mask = np.tile(mask,(self.field.shape[0],1,1,1))
             self.field = np.concatenate([self.field, mask], axis=1)

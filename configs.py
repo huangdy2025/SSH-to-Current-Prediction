@@ -1,13 +1,14 @@
 import argparse
 from pathlib import Path
 import re
+import numpy as np
 def parse_args():
     parser = argparse.ArgumentParser(description='Train a model')
 
     # Data
     parser.add_argument('--area', type=str, default='scs')
 
-    parser.add_argument('--env', type=str, default='windows',)
+    parser.add_argument('--env', type=str, default='linux',)
 
     parser.add_argument('--norm', action='store_true', default=False)
 
@@ -23,21 +24,21 @@ def parse_args():
                         help='Whether to include wind data')
 
     parser.add_argument('--wind_stats_path', type=str,
-                        default='/data/hjj/MVPfore/Datas/processed_data/era5_wind_1_8_deg_normalized/wind_stats.nc',
+                        default='/data/hdy/workspace/data/wind_240.nc',
                         help='Path to wind u10_mean,v10_std,et al., required if need_wind is True')
 
     # Time range
     parser.add_argument('--start_time_train', type=str, default= '1993-01-01',
                         help='Start time for training data')
-    parser.add_argument('--end_time_train', type=str, default= '2021-12-31', 
+    parser.add_argument('--end_time_train', type=str, default= '2016-12-31', 
                         help='End time for training data')
-    parser.add_argument('--start_time_val', type=str, default= '2022-01-01', 
+    parser.add_argument('--start_time_val', type=str, default= '2017-01-01', 
                         help='Start time for validation data')
-    parser.add_argument('--end_time_val', type=str, default= '2022-12-31', 
+    parser.add_argument('--end_time_val', type=str, default= '2018-12-31', 
                         help='End time for validation data')
-    parser.add_argument('--start_time_test', type=str, default= '2023-01-01',#'2023-01-31',#'2023-02-10',
+    parser.add_argument('--start_time_test', type=str, default= '2019-01-01',#'2023-01-31',#'2023-02-10',
                         help='Start time for test data')
-    parser.add_argument('--end_time_test', type=str, default= '2024-06-14',#'2023-02-19',#'2023-03-01',
+    parser.add_argument('--end_time_test', type=str, default= '2020-12-31',#'2023-02-19',#'2023-03-01',
                         help='End time for test data')
 
     # Data shape
@@ -77,7 +78,7 @@ def parse_args():
     parser.add_argument('--loss_ignore_nan', action='store_true', default=False,
                         help='Whether to ignore nan values in loss')
 
-    parser.add_argument('--model_savepath', type=str, default="/data/hjj/SEJ/model_paras_aviso_0.125deg_final")
+    parser.add_argument('--model_savepath', type=str, default="/data/hdy/workspace/SSH-Prediction-in-the-SCS/output/")
 
     # 随机种子
     parser.add_argument('--SEED', type=int, default=42)
@@ -130,8 +131,8 @@ def get_simvp_tau_config(args):
         "C_out": args.output_channels,
         "hid_S": 16,
         "hid_T": 256,
-        "N_S": 4,
-        "N_T": 6,
+        "N_S": 2,
+        "N_T": 12,
         "model_type": 'tau',
         "drop": 0.2,
         "drop_path": 0.2,
@@ -217,7 +218,7 @@ def get_sted_config(args):
 
 def get_my_config(args_, model_config=None):
     data_shape = {
-        'scs': (160, 160),
+        'scs': (240, 240),
         'indian': (480, 480),
         'kuroshio': (0, 0), #todo
         'global': (720, 1440),
@@ -225,9 +226,9 @@ def get_my_config(args_, model_config=None):
     args = args_
     if args.env == 'linux':
         if args.area == 'scs':
-            args.base = '/data/hjj/ssh_prediction/data/ssh_data/AVISO_0.125deg_scs'
-            args.wind_path = '/data/hjj/ssh_prediction/data/wind_data/processed_data/era5_wind_1_8_deg_normalized/era5_wind_1_8_deg_all_years_normalized.nc'
-            args.model_savepath = '/data/hjj/ssh_prediction/work_dir/scs'
+            args.base = '/data/hdy/workspace/data/scs/'
+            args.wind_path = '/data/hdy/workspace/data/scs/wind_240.nc'
+            args.model_savepath = '/data/hdy/workspace/SSH-Prediction-in-the-SCS/output/scs/'
         elif args.area == 'indian':
             args.base = '/data/hjj/ssh_prediction/data/ssh_data/AVISO_0.125deg_indian_ocean'
             args.model_savepath = '/data/hjj/ssh_prediction/work_dir/indian_ocean'
@@ -253,24 +254,19 @@ def get_my_config(args_, model_config=None):
     if isinstance(args.base, str):
         args.base = Path(args.base)
 
-    args.datapath =sorted(
-    (
-        p for p in args.base.iterdir()
-        if p.suffix == ".nc" and re.search(r"\d+", p.stem)
-    ),
-    key=lambda p: int(re.search(r"\d+", p.stem).group())
-    )
+    args.datapath =[args.base / "ssh_240.nc"]
 
-    args.path_means = args.base / "mean.npy"
-    args.path_stds = args.base / "std.npy"
-    args.path_land_mask = args.base / "mask.npy"
-    args.path_adt_clim = args.base / "adt_clim.npy"
+    # 从 stats.npz 加载统计量与掩膜
+    stats = np.load(args.base / "stats.npz", allow_pickle=True)
+    args.ssh_mean = float(stats['ssh_mu'])
+    args.ssh_std = float(stats['ssh_std'])
+    args.mask_land = ~stats['ocean_mask']  # True=陆地(invalid)，与原 mask 语义一致
 
 
     args.file_name = 'var'
     args.input_channels = 0
     args.output_channels = 0
-    args.evaluate_wind = True # todo
+    args.evaluate_wind = args.need_wind  # need_wind=True 时 target 带风场用于评估；否则只取 ssh
 
     if args.need_ssh:
         args.input_channels += 1

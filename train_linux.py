@@ -26,10 +26,12 @@ model_names = [ 'predrnn', 'predformer','gsta','rest', 'sted','tau']
 # model_names = ['gsta','predrnn','predformer']
 
 # model_names = ['predformer','predrnn']
-model_names = model_names[0:1]
+#model_names = model_names[0:1]
+model_names = ['tau']
 
 pinn_lambdas= [0, 0.1, 5.0, 0.5, 1.0, 0.7]
 pinn_lambdas = [0.7, 0, 0.1, 5]
+pinn_lambdas = [0.7]
 
 loss_ignore_nan = [False, True]
 loss_ignore_nan = [loss_ignore_nan[1]]
@@ -38,7 +40,7 @@ shuffle = [False, True]
 shuffle = [shuffle[1]]
 
 patches = [8,4,2]
-patches = [2]
+patches = [4]
 
 num_runs = 0
 for st in start_time:
@@ -61,7 +63,7 @@ for st in start_time:
 
                                                 cmd_parts = [
                                                             "python3 -m tools.trainers",
-                                                            "--batch_size_train 8",
+                                                            "--batch_size_train 4",
                                                             f"--model_name {model_name}",
                                                             f"--patch_size {patch}",
                                                             "--gradient_clip",
@@ -69,8 +71,7 @@ for st in start_time:
                                                             "--env linux",
                                                             # "--area indian",
                                                             "--input_length 10",
-                                                            "--output_length 10",
-                                                            "--end_time_test 2026-06-14"
+                                                            "--output_length 10"
                                                             ]
 
                                                 num_runs += 1
