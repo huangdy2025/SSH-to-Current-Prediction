@@ -138,7 +138,7 @@ def get_simvp_tau_config(args):
         "drop_path": 0.2,
         "spatio_kernel_enc": 3,
         "spatio_kernel_dec": 3,
-        "mlp_ratio": 2.0,
+        "mlp_ratio": 8.0,
         "gated": args.gated
     }
     return simvp_tau_config
@@ -260,6 +260,10 @@ def get_my_config(args_, model_config=None):
     stats = np.load(args.base / "stats.npz", allow_pickle=True)
     args.ssh_mean = float(stats['ssh_mu'])
     args.ssh_std = float(stats['ssh_std'])
+    args.u10_mean = float(stats['u10_mu'])
+    args.u10_std = float(stats['u10_std'])
+    args.v10_mean = float(stats['v10_mu'])
+    args.v10_std = float(stats['v10_std'])
     args.mask_land = ~stats['ocean_mask']  # True=陆地(invalid)，与原 mask 语义一致
 
 

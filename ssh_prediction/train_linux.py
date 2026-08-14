@@ -11,7 +11,7 @@ vars = [vars[0]]
 
 
 need_wind = [False,True]
-need_wind = [need_wind[1]]  # True: 启用风场(u10,v10)作为输入
+#need_wind = [need_wind[1]]  # True: 启用风场(u10,v10)作为输入
 
 norms = [False, True]
 norms = [norms[1]]
@@ -29,9 +29,9 @@ model_names = [ 'predrnn', 'predformer','gsta','rest', 'sted','tau']
 #model_names = model_names[0:1]
 model_names = ['tau']
 
-pinn_lambdas= [0, 0.1, 5.0, 0.5, 1.0, 0.7]
-pinn_lambdas = [0.7, 0, 0.1, 5]
-pinn_lambdas = [0.7]
+# pinn_lambdas= [0, 0.1, 5.0, 0.5, 1.0, 0.7]
+# pinn_lambdas = [0.7, 0, 0.1, 5]
+pinn_lambdas = [0, 0.7]
 
 loss_ignore_nan = [False, True]
 loss_ignore_nan = [loss_ignore_nan[1]]
@@ -40,7 +40,7 @@ shuffle = [False, True]
 shuffle = [shuffle[1]]
 
 patches = [8,4,2]
-patches = [4]
+patches = [8]
 
 num_runs = 0
 for st in start_time:

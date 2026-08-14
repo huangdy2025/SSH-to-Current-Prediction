@@ -25,6 +25,8 @@ class MvDataset(Dataset):
         self.dates = self.data.time.values
 
         self.field = None
+        self.channel_means = []
+        self.channel_stds = []
 
         if args.need_ssh:
 
@@ -33,35 +35,33 @@ class MvDataset(Dataset):
                 self.field = self.adt
             else:
                 self.field = np.concatenate([self.field, self.adt], axis=1)
-            # del self.adt
+            self.channel_means.append(args.ssh_mean)
+            self.channel_stds.append(args.ssh_std)
         if args.need_uv:
             self.uo = self.data.ugos.values.astype(np.float32)
             self.vo = self.data.vgos.values.astype(np.float32)
             self.field = np.concatenate([self.uo, self.vo], axis=1)
-            # del self.uo, self.vo
-
-        # ssh data and ugos, vgos were not been  normalized
-        self.mean = args.ssh_mean
-        self.std = args.ssh_std
-        if norm:
-            print(self.field.shape)
-            print(np.shape(self.mean))
-            print(f"mean: {self.mean}, std: {self.std}")
-            for i in range(self.field.shape[1]):
-                if isinstance(self.mean, (int, float, np.number)):
-                    self.field[:, i, ...] = (self.field[:, i, ...] - self.mean) / self.std
-                elif self.mean.ndim == 0:
-                    self.field[:, i, ...] = (self.field[:, i, ...] - self.mean) / self.std
-                else:
-                    self.field[:, i, ...] = (self.field[:, i, ...] - self.mean[i]) / self.std[i]
-
+            self.channel_means.extend([args.ssh_mean, args.ssh_mean])
+            self.channel_stds.extend([args.ssh_std, args.ssh_std])
 
         if args.need_wind:
             self.wind_data = xr.open_dataset(args.wind_path).sel(time=time_span)
             self.u10 = np.expand_dims(self.wind_data.u10.values.astype(np.float32), axis=1)
             self.v10 = np.expand_dims(self.wind_data.v10.values.astype(np.float32), axis=1)
             self.field = np.concatenate([self.field, self.u10, self.v10], axis=1)
+            self.channel_means.extend([args.u10_mean, args.v10_mean])
+            self.channel_stds.extend([args.u10_std, args.v10_std])
             del self.u10, self.v10
+
+        # 按通道归一化（mask 通道除外，在归一化后拼接）
+        self.mean = np.array(self.channel_means, dtype=np.float32)
+        self.std = np.array(self.channel_stds, dtype=np.float32)
+        if norm:
+            print(self.field.shape)
+            print(self.mean.shape)
+            print(f"mean: {self.mean}, std: {self.std}")
+            for i in range(self.field.shape[1]):
+                self.field[:, i, ...] = (self.field[:, i, ...] - self.mean[i]) / self.std[i]
 
         if args.need_mask:
             mask = args.mask_land

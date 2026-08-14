@@ -358,8 +358,9 @@ def compute_f_and_sigmoid_weight(lat,k=2,phi0=5, if_solid_f=False):
     phi = torch.abs(lat_t)
 
     if if_solid_f:
-        f = 2 * Omega * torch.sin(torch.deg2rad(torch.mean(lat_t)))  # [H, W]
-        f_weight = 1.0
+        f_val = 2 * Omega * torch.sin(torch.deg2rad(torch.mean(lat_t)))  # scalar
+        f = f_val.reshape(1, 1, 1, 1, 1).expand(1, 1, 1, lat.shape[0], lat.shape[1]).clone()
+        f_weight = torch.ones_like(f)
         return f, f_weight
 
     # 空间变化的科氏参数

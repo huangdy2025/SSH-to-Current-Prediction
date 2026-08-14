@@ -177,11 +177,12 @@ class BaseMethod(ABC):
         self.logger.info(f"  Scheduler: {self.scheduler.__class__.__name__}")
         self.logger.info(f"  Loss Function: {self.loss_name}")
         self.logger.info(f"  Batch Size: {self.batch_size_train}")
-        self.logger.info(f"  Inputs: {'uv, ' if self.config.need_uv else ''} {'ssh, ' if self.config.need_ssh else ''}"
-                         f" {'wind, 'if self.config.need_wind else ''} {'mask' if self.config.need_mask else ''}")
-        self.logger.info(f"  pinn: {self.config.pinn_lambda}")
-        self.logger.info(f"  norm: {self.config.norm}")
-        self.logger.info(f"  need_wind: {self.config.need_wind}")
+        input_desc = getattr(self.config, 'input_channels', None)
+        if input_desc is not None:
+            self.logger.info(f"  Input channels: {input_desc}")
+        self.logger.info(f"  pinn: {getattr(self.config, 'pinn_lambda', 0)}")
+        self.logger.info(f"  norm: {getattr(self.config, 'norm', False)}")
+        self.logger.info(f"  patch_size: {getattr(self.config, 'patch_size', 'N/A')}")
 
         if self.gradient_clip_enabled:
             self.logger.info(
