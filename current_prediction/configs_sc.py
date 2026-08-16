@@ -28,9 +28,9 @@ CHANNEL_MAP: Dict[str, int] = {
     'lonlat': 2,   # lon + lat
 }
 
-# 合法的输入组合
-VALID_SSH_INPUTS = ['ssh_mask', 'ssh_mask_wind']
-VALID_AGEO_INPUTS = ['ssh_mask_wind', 'ssh_mask_wind_lonlat']
+# 合法的输入组合 (通道顺序须与预训练 SSH 模型一致: ssh, wind, mask)
+VALID_SSH_INPUTS = ['ssh_mask', 'ssh_wind_mask']
+VALID_AGEO_INPUTS = ['ssh_mask', 'ssh_wind_mask', 'ssh_wind_mask_lonlat']
 
 
 # ============================================================
@@ -40,7 +40,7 @@ VALID_AGEO_INPUTS = ['ssh_mask_wind', 'ssh_mask_wind_lonlat']
 class ModelConfig:
     """单个模型的配置容器, 继承公共参数, 补充模型专属参数"""
     name: str = ''              # 模型类型: tau, gsta
-    input_spec: str = ''        # 输入组合: ssh_mask, ssh_mask_wind 等
+    input_spec: str = ''        # 输入组合: ssh_mask, ssh_wind_mask, ssh_wind_mask_lonlat
     input_channels: int = 0
     output_channels: int = 0
     model_config: dict = field(default_factory=dict)
@@ -108,7 +108,7 @@ def parse_args():
     # ---- 非地转流模型参数 (trainable) ----
     parser.add_argument('--model_name', type=str, default='tau',
                         help='Current prediction model type (tau, gsta)')
-    parser.add_argument('--ageo_input', type=str, default='ssh_mask_wind',
+    parser.add_argument('--ageo_input', type=str, default='ssh_wind_mask',
                         choices=VALID_AGEO_INPUTS,
                         help='Ageostrophic model input channels')
 
