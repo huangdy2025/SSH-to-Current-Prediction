@@ -1,6 +1,6 @@
 """
-表层流预测核心评估代码
-支持双模型架构: SSH模型(冻结) + 非地转流模型(可训练)
+端到端表层流预测核心评估代码
+单一模型架构: SSH+wind+mask → u,v 总流 (无地转/非地转分解)
 评估指标: RMSE (by lead/date), Correlation, 空间MAE, Persistence基准
 """
 import os
@@ -9,22 +9,13 @@ import torch
 import numpy as np
 from pathlib import Path
 
-from current_prediction.configs_sc import parse_args, get_my_config, VALID_SSH_INPUTS, VALID_AGEO_INPUTS
-from current_prediction.dataset_sc import CurrentDataset
+from e2e_current.configs import parse_args, get_my_config, VALID_INPUTS
+from e2e_current.dataset import E2ECurrentDataset
 from current_prediction.mytools_sc import (
     MSELossIgnoreNaNCurrent,
-    compute_geostrophic_current_gpu,
     set_all_seeds,
 )
-from ssh_prediction.mytools import MaskPearsonCorr
 from models import SimVP_Model
-
-
-# SSH 预训练模型路径映射
-SSH_MODEL_PATHS = {
-    'ssh_mask': '/data/hdy/workspace/SSH-to-Current-Prediction/output/scs/SimVP_Model_seed42/var_ssh_mask_20260811_1116/model_paras.pkl',
-    'ssh_wind_mask': '/data/hdy/workspace/SSH-to-Current-Prediction/output/scs/SimVP_Model_seed42/var_ssh_wind_mask_20260813_0114/model_paras.pkl',
-}
 
 
 def extract_model_info(parent_dir):
@@ -36,7 +27,7 @@ def extract_model_info(parent_dir):
     for folder in parent_path.iterdir():
         if folder.is_dir():
             pkl_file = folder / "model_paras.pkl"
-            if pkl_file.exists():
+            if pkl_file.exists() and folder.name.lower().startswith('e2e_'):
                 name = folder.name
                 match = pattern.match(name)
                 simple_name = match.group(1) if match else name
@@ -47,14 +38,14 @@ def extract_model_info(parent_dir):
 def parse_folder_name(folder_name):
     """
     从文件夹名解析配置
-    格式: current_{ageo_input}[_pinn{lambda}]_norm_{timestamp}
-    返回: dict with ageo_input, pinn, norm, ssh_input
+    格式: e2e_current_{e2e_input}[_pinn{lambda}]_norm_{timestamp}
+    返回: dict with e2e_input, pinn, norm
     """
-    info = {'ageo_input': None, 'pinn': None, 'norm': False, 'ssh_input': None}
+    info = {'e2e_input': None, 'pinn': None, 'norm': False}
 
     name = re.sub(r'_\d{8}_\d{4}$', '', folder_name)
-    if name.startswith('current_'):
-        name = name[len('current_'):]
+    if name.startswith('e2e_current_'):
+        name = name[len('e2e_current_'):]
 
     if name.endswith('_norm'):
         info['norm'] = True
@@ -65,21 +56,13 @@ def parse_folder_name(folder_name):
         info['pinn'] = float(m.group(1))
         name = name[:m.start()]
 
-    info['ageo_input'] = name
-    # ssh_input 默认与 ageo_input 一致 (不含 lonlat 时)
-    if name in VALID_SSH_INPUTS:
-        info['ssh_input'] = name
-    elif name in VALID_AGEO_INPUTS:
-        # 可能含 lonlat, ssh_input 取不含 lonlat 的部分
-        parts = name.split('_')
-        ssh_parts = [p for p in parts if p != 'lonlat']
-        info['ssh_input'] = '_'.join(ssh_parts)
+    info['e2e_input'] = name
 
     return info
 
 
-class CurrentModelEvaluator:
-    """表层流预测模型评估器"""
+class E2EModelEvaluator:
+    """端到端表层流预测模型评估器"""
 
     def __init__(self, parent_dir, save_dir):
         self.parent_dir = parent_dir
@@ -93,12 +76,14 @@ class CurrentModelEvaluator:
         info = parse_folder_name(folder_name)
 
         args_ = parse_args()
-        args_.ssh_input = info['ssh_input'] or 'ssh_wind_mask'
-        args_.ageo_input = info['ageo_input'] or 'ssh_wind_mask'
-        args_.ssh_model_path = SSH_MODEL_PATHS.get(info['ssh_input'], '')
+        args_.e2e_input = info['e2e_input'] if info['e2e_input'] in VALID_INPUTS else 'ssh_wind_mask'
         args_.norm = info['norm']
         args_.env = 'linux'
         args_.area = 'scs'
+
+        if info['pinn'] is not None:
+            args_.is_pinn = True
+            args_.pinn_lambda = info['pinn']
 
         args = get_my_config(args_)
         return args
@@ -106,81 +91,41 @@ class CurrentModelEvaluator:
     # ---------------------------------------------------------
     # 2. 加载模型
     # ---------------------------------------------------------
-    def load_models(self, args, model_para_path):
-        """加载 SSH 模型和 ageo 模型"""
+    def load_model(self, args, model_para_path):
+        """加载端到端模型"""
         device = args.device
 
-        # SSH 模型 (冻结)
-        ssh_model = SimVP_Model(**args.ssh_model_config).to(device)
-        if args.ssh_model_path and os.path.exists(args.ssh_model_path):
-            ssh_model.load_state_dict(
-                torch.load(args.ssh_model_path, map_location=device, weights_only=True)
-            )
-            print(f"SSH model loaded from {args.ssh_model_path}")
-        else:
-            print(f"Warning: SSH model not found at '{args.ssh_model_path}'")
-        ssh_model.eval()
-        for p in ssh_model.parameters():
-            p.requires_grad = False
-
-        # ageo 模型
-        ageo_model = SimVP_Model(**args.model_config).to(device)
+        model = SimVP_Model(**args.model_config).to(device)
         if os.path.exists(model_para_path):
-            ageo_model.load_state_dict(
+            model.load_state_dict(
                 torch.load(model_para_path, map_location=device, weights_only=True)
             )
-            print(f"Ageo model loaded from {model_para_path}")
+            print(f"E2E model loaded from {model_para_path}")
         else:
-            print(f"Warning: Ageo model not found at '{model_para_path}'")
-        ageo_model.eval()
+            print(f"Warning: E2E model not found at '{model_para_path}'")
+        model.eval()
 
-        return ssh_model, ageo_model
+        return model
 
     # ---------------------------------------------------------
     # 3. 预测总流
     # ---------------------------------------------------------
-    def predict_total(self, ssh_model, ageo_model, ssh_input, datax,
-                      args, lon, lat):
+    def predict_total(self, model, datax, args):
         """
-        预测总流 = 非地转流 + f_weight * 地转流
+        预测总流 (端到端直接输出)
         返回: pred_total (B, T_out, 2, H, W)
         """
         device = args.device
 
         with torch.no_grad():
-            # SSH 模型预测
-            pred_ssh = ssh_model(ssh_input.to(device))  # (B, T_out, 1, H, W)
-
-            # 反归一化 SSH 到物理量
-            pred_ssh_phys = pred_ssh * args.ssh_std + args.ssh_mean
-
-            # 计算地转流
-            u_geo, v_geo, f_weight = compute_geostrophic_current_gpu(
-                pred_ssh_phys, lon, lat,
-                if_solid_f=getattr(args, 'if_solid_f', True)
-            )
-            u_geo = u_geo[:, :, 0:1]
-            v_geo = v_geo[:, :, 0:1]
-
-            # 地转流归一化到与 target 相同的尺度
-            u_geo_norm = (u_geo - args.u_c_mu) / args.u_c_std
-            v_geo_norm = (v_geo - args.v_c_mu) / args.v_c_std
-
-            # ageo 模型预测非地转流
-            pred_ageo = ageo_model(datax.to(device))  # (B, T_out, 2, H, W)
-
-            # 总流 = 非地转流 + f_weight * 地转流
-            f_weight = f_weight.to(device)
-            pred_total = pred_ageo.clone()
-            pred_total[:, :, 0:1] = pred_ageo[:, :, 0:1] + f_weight * u_geo_norm
-            pred_total[:, :, 1:2] = pred_ageo[:, :, 1:2] + f_weight * v_geo_norm
+            pred_total = model(datax.to(device))  # (B, T_out, 2, H, W)
 
         return pred_total
 
     # ---------------------------------------------------------
     # 4. 单模型评估 (lead + date)
     # ---------------------------------------------------------
-    def evaluate_one_model(self, ssh_model, ageo_model, args, test_dataset,
+    def evaluate_one_model(self, model, args, test_dataset,
                            mse_func, corr_func, model_name,
                            lon, lat):
 
@@ -198,9 +143,9 @@ class CurrentModelEvaluator:
         all_targets = []
 
         print("  Collecting predictions...")
-        for datax, ssh_input, datay in dataloader:
+        for datax, datay in dataloader:
             pred_total = self.predict_total(
-                ssh_model, ageo_model, ssh_input, datax, args, lon, lat
+                model, datax, args
             )
             all_preds.append(pred_total.cpu())
             all_targets.append(datay.cpu())
@@ -273,7 +218,7 @@ class CurrentModelEvaluator:
     # ---------------------------------------------------------
     # 5. 空间评估
     # ---------------------------------------------------------
-    def evaluate_one_model_spatial(self, ssh_model, ageo_model, args, test_dataset,
+    def evaluate_one_model_spatial(self, model, args, test_dataset,
                                    model_name, lon, lat):
 
         device = args.device
@@ -289,9 +234,9 @@ class CurrentModelEvaluator:
         all_targets = []
 
         print("  Collecting spatial predictions...")
-        for datax, ssh_input, datay in dataloader:
+        for datax, datay in dataloader:
             pred_total = self.predict_total(
-                ssh_model, ageo_model, ssh_input, datax, args, lon, lat
+                model, datax, args
             )
             all_preds.append(pred_total.cpu())
             all_targets.append(datay.cpu())
@@ -335,7 +280,7 @@ class CurrentModelEvaluator:
         print("  Collecting persistence predictions...")
         # 按索引遍历, 直接访问 test_dataset.target 获取最后一个观测时刻的流速
         for idx in range(len(test_dataset)):
-            _, _, datay = test_dataset[idx]  # datay: (T_out, 2, H, W)
+            _, datay = test_dataset[idx]  # datay: (T_out, 2, H, W)
             # Persistence: 用最后一个观测时刻的流速作为预测
             # target[idx+input_length-1] 是预测窗口前一步的流速
             last_current = test_dataset.target[idx + input_length - 1]  # (2, H, W)
@@ -411,10 +356,10 @@ class CurrentModelEvaluator:
     def run(self, spatial=False, season='full'):
 
         model_info_list = extract_model_info(self.parent_dir)
-        # 只处理 current_ 开头的文件夹
+        # 只处理 e2e_ 开头的文件夹
         model_info_list = [
             (p, n, f) for p, n, f in model_info_list
-            if 'current' in n.lower()
+            if 'e2e' in n.lower()
         ]
         print(f"找到 {len(model_info_list)} 个模型文件，开始处理...")
 
@@ -435,7 +380,7 @@ class CurrentModelEvaluator:
             mask_land = torch.from_numpy(args.mask_land)
 
             lon, lat = None, None
-            test_dataset = CurrentDataset(args, mode='test', norm=args.norm)
+            test_dataset = E2ECurrentDataset(args, mode='test', norm=args.norm)
             lon, lat = test_dataset.lon, test_dataset.lat
             if lon.ndim == 1 and lat.ndim == 1:
                 lon, lat = np.meshgrid(lon, lat)
@@ -444,20 +389,20 @@ class CurrentModelEvaluator:
 
             mask_ocean = ~mask_land
             mse_func = MSELossIgnoreNaNCurrent(args, mask_ocean)
-            corr_func = MaskPearsonCorr(mask_ocean)
+            corr_func = None
 
-            ssh_model, ageo_model = self.load_models(args, model_para_path)
+            model = self.load_model(args, model_para_path)
 
             # 使用完整文件夹名 (含时间戳) 作为模型名, 避免同配置不同运行的结果互相覆盖
             model_name = Path(folder_path).name
             if spatial:
                 self.evaluate_one_model_spatial(
-                    ssh_model, ageo_model, args, test_dataset,
+                    model, args, test_dataset,
                     model_name, lon, lat
                 )
             else:
                 self.evaluate_one_model(
-                    ssh_model, ageo_model, args, test_dataset,
+                    model, args, test_dataset,
                     mse_func, corr_func, model_name,
                     lon, lat
                 )
@@ -468,7 +413,7 @@ class CurrentModelEvaluator:
             last_dataset = test_dataset
 
             # 释放显存
-            del ssh_model, ageo_model
+            del model
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
 
@@ -506,9 +451,9 @@ if __name__ == "__main__":
 
     # 1. 标准评估: RMSE + Corr (lead/date) + Persistence 基准
     print("=" * 60)
-    print("Standard Evaluation (RMSE + Corr + Persistence)")
+    print("E2E Standard Evaluation (RMSE + Corr + Persistence)")
     print("=" * 60)
-    evaluator = CurrentModelEvaluator(
+    evaluator = E2EModelEvaluator(
         parent_dir=str(base_dir),
         save_dir=str(save_dir),
     )
@@ -516,9 +461,9 @@ if __name__ == "__main__":
 
     # 2. 空间评估: MAE 空间分布
     print("\n" + "=" * 60)
-    print("Spatial Evaluation (MAE spatial distribution)")
+    print("E2E Spatial Evaluation (MAE spatial distribution)")
     print("=" * 60)
-    evaluator_spatial = CurrentModelEvaluator(
+    evaluator_spatial = E2EModelEvaluator(
         parent_dir=str(base_dir),
         save_dir=str(save_dir),
     )
