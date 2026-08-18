@@ -9,8 +9,8 @@ import torch
 import numpy as np
 from pathlib import Path
 
-from e2e_current.configs import parse_args, get_my_config, VALID_INPUTS
-from e2e_current.dataset import E2ECurrentDataset
+from e2e_current_prediction.configs import parse_args, get_my_config, VALID_INPUTS
+from e2e_current_prediction.dataset import E2ECurrentDataset
 from current_prediction.mytools_sc import (
     MSELossIgnoreNaNCurrent,
     set_all_seeds,
@@ -38,10 +38,10 @@ def extract_model_info(parent_dir):
 def parse_folder_name(folder_name):
     """
     从文件夹名解析配置
-    格式: e2e_current_{e2e_input}[_pinn{lambda}]_norm_{timestamp}
-    返回: dict with e2e_input, pinn, norm
+    格式: e2e_current_{e2e_input}_norm_{timestamp}
+    返回: dict with e2e_input, norm
     """
-    info = {'e2e_input': None, 'pinn': None, 'norm': False}
+    info = {'e2e_input': None, 'norm': False}
 
     name = re.sub(r'_\d{8}_\d{4}$', '', folder_name)
     if name.startswith('e2e_current_'):
@@ -50,11 +50,6 @@ def parse_folder_name(folder_name):
     if name.endswith('_norm'):
         info['norm'] = True
         name = name[:-len('_norm')]
-
-    m = re.search(r'_pinn([\d.]+)$', name)
-    if m:
-        info['pinn'] = float(m.group(1))
-        name = name[:m.start()]
 
     info['e2e_input'] = name
 
@@ -80,10 +75,6 @@ class E2EModelEvaluator:
         args_.norm = info['norm']
         args_.env = 'linux'
         args_.area = 'scs'
-
-        if info['pinn'] is not None:
-            args_.is_pinn = True
-            args_.pinn_lambda = info['pinn']
 
         args = get_my_config(args_)
         return args

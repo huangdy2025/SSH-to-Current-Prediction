@@ -58,6 +58,10 @@ class CurrentModel(BaseMethod):
         if config.is_pinn and config.pinn_lambda > 0:
             self.loss_func_pinn = loss_func_pinn
 
+        # 记录 SSH 模型信息到日志
+        self.logger.info(f"  SSH model input: {getattr(config, 'ssh_input', 'N/A')}")
+        self.logger.info(f"  SSH model path: {getattr(config, 'ssh_model_path', 'N/A')}")
+
     def _compute_loss(self, train_data, step, mask=None, test=False):
         """
         train_data: (datax, ssh_input, datay)

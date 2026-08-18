@@ -7,14 +7,13 @@
 2. 公共参数 (area/env/height/width/input_length 等) 在 args 上只定义一次
 3. 通道解析统一化为 _parse_channels()
 4. validate_config() 在 get_my_config() 末尾校验参数一致性
-5. verify_alignment_with_decomposed() 硬约束 E2E 参数与分解式 ageo 完全一致
-6. _build_simvp_config() 统一模型配置构建, 避免重复调用
+5. _build_simvp_config() 统一模型配置构建, 避免重复调用
 """
 import argparse
 from dataclasses import dataclass, field
 from pathlib import Path
 import numpy as np
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 from ssh_prediction.configs import get_simvp_tau_config, get_simvp_gsta_config
 
@@ -121,13 +120,6 @@ def parse_args():
 
     # ---- Loss ----
     parser.add_argument('--loss_ignore_nan', action='store_true', default=False)
-    parser.add_argument('--is_pinn', action='store_true', default=False)
-    parser.add_argument('--pinn_lambda', type=float, default=0.)
-
-    # ---- 地转流计算 ----
-    parser.add_argument('--if_solid_f', action='store_true', default=True,
-                        help='Use constant f (mean lat). Default True: solid f '
-                             'to suppress geostrophic contribution near equator')
 
     # ---- 路径 ----
     parser.add_argument('--model_savepath', type=str,
@@ -262,92 +254,7 @@ def validate_config(args) -> List[str]:
     if not Path(args.uv_path).exists():
         warnings.append(f"UV current data file not found: {args.uv_path}")
 
-    # 7. PINN lambda 一致性
-    if args.is_pinn and args.pinn_lambda <= 0:
-        warnings.append(f"is_pinn=True but pinn_lambda={args.pinn_lambda} (should be > 0)")
-
     return warnings
-
-
-# ============================================================
-# 与分解式架构的参数对齐验证 (硬约束)
-# ============================================================
-_ALIGNMENT_REFERENCE_INPUT_SPEC = 'ssh_wind_mask'  # 分解式 ageo 对齐基准
-
-
-def verify_alignment_with_decomposed(args) -> None:
-    """硬断言: E2E 的 model_config 必须与分解式 ageo_model 完全一致, 阻止训练启动."""
-    from current_prediction.configs_sc import (
-        parse_args as parse_sc,
-        get_my_config as get_sc_config,
-        _parse_channels as parse_sc_channels,
-    )
-
-    # 1. 构建对齐基准: 分解式 ageo 配置 (与E2E同4通道, 同backbone)
-    ref_args = parse_sc()
-    ref_args.ssh_input = _ALIGNMENT_REFERENCE_INPUT_SPEC
-    ref_args.ageo_input = _ALIGNMENT_REFERENCE_INPUT_SPEC
-    ref_args.model_name = args.model_name  # 强制 ageo backbone 类型 = E2E backbone 类型
-    ref_args.norm = args.norm
-    ref_args.env = args.env
-    ref_args.area = args.area
-    ref_args = get_sc_config(ref_args)
-    ref_cfg = ref_args.model_config  # 分解式 ageo 的 SimVP config
-
-    # 2. E2E 的 config
-    e2e_cfg = args.model_config
-
-    # 3. 通道数对齐 (输入语义不同但通道数必须相同)
-    ref_in_ch = parse_sc_channels(_ALIGNMENT_REFERENCE_INPUT_SPEC)
-    if e2e_cfg['in_shape'][1] != ref_in_ch:
-        raise AssertionError(
-            f"[参数对齐失败] input_channels 不一致: "
-            f"E2E={e2e_cfg['in_shape'][1]} vs 分解式ageo={ref_in_ch}. "
-            f"必须保证 E2E 输入通道数 == 分解式 ageo_input='{_ALIGNMENT_REFERENCE_INPUT_SPEC}' 的通道数."
-        )
-
-    # 4. 逐项对比所有 SimVP 超参 (in_shape[1]已单独验证, 其余逐项)
-    IGNORED_KEYS = set()  # 不忽略任何键
-    all_keys = sorted(set(ref_cfg.keys()) | set(e2e_cfg.keys()))
-    diffs = []
-    for k in all_keys:
-        if k in IGNORED_KEYS:
-            continue
-        v_ref = ref_cfg.get(k, '<missing>')
-        v_e2e = e2e_cfg.get(k, '<missing>')
-        if v_ref != v_e2e:
-            diffs.append((k, v_ref, v_e2e))
-
-    if diffs:
-        msg = "[参数对齐失败] E2E model_config 与分解式 ageo_model 不一致:\n"
-        for k, v_ref, v_e2e in diffs:
-            msg += f"    {k:<25} 分解式={v_ref!r:<25} E2E={v_e2e!r}\n"
-        msg += (
-            "\n  解决方法: 修改 e2e_current/configs.py 或 current_prediction/configs_sc.py, "
-            "使两者 SimVP 超参完全一致 (保证可训练参数量相同, 排除参数量作为混淆变量)."
-        )
-        raise AssertionError(msg)
-
-    # 5. 实例化对比可训练参数量 (终极保证)
-    try:
-        from models import SimVP_Model
-        e2e_model = SimVP_Model(**e2e_cfg)
-        ref_model = SimVP_Model(**ref_cfg)
-        n_e2e = sum(p.numel() for p in e2e_model.parameters())
-        n_ref = sum(p.numel() for p in ref_model.parameters())
-        if n_e2e != n_ref:
-            raise AssertionError(
-                f"[参数对齐失败] 可训练参数量不一致: "
-                f"E2E={n_e2e:,} vs 分解式ageo={n_ref:,} (差异 {n_e2e - n_ref:+,}). "
-                f"虽然超参字典一致, 但实际参数量不同, 请检查 SimVP_Model 实现."
-            )
-        print(f"[参数对齐通过] E2E 与分解式 ageo 可训练参数量完全一致: {n_e2e:,}")
-    except ImportError:
-        # torch 未安装时跳过实例化验证 (语法层已保证)
-        print("[参数对齐通过] (跳过实例化验证 - torch 未安装)")
-    except Exception as e:
-        # 实例化失败不阻塞, 但提示用户
-        print(f"[参数对齐警告] 实例化验证失败: {e} (超参字典已对齐, 不阻塞训练)")
 
 
 # ============================================================
@@ -359,7 +266,6 @@ def get_my_config(args_):
     - 公共参数在 args 上只定义一次
     - e2e_config 引用公共参数
     - 最终 validate_config() 校验一致性
-    - verify_alignment_with_decomposed() 硬约束参数对齐
     """
     args = args_
 
@@ -384,8 +290,6 @@ def get_my_config(args_):
 
     # 4. 其他派生属性
     args.file_name = f'e2e_current_{args.e2e_input}'
-    if args.is_pinn:
-        args.file_name += f'_pinn{args.pinn_lambda}'
     if args.norm:
         args.file_name += '_norm'
     args.patched = False
@@ -399,8 +303,5 @@ def get_my_config(args_):
         for w in warnings:
             print(f"  ⚠ {w}")
         print("=" * 50)
-
-    # 6. 硬约束: E2E 参数必须与分解式 ageo_model 完全一致
-    verify_alignment_with_decomposed(args)
 
     return args

@@ -11,7 +11,7 @@ import torch
 from torch.utils.data import Dataset
 import xarray as xr
 
-from e2e_current.configs import CHANNEL_MAP, _parse_channels
+from e2e_current_prediction.configs import CHANNEL_MAP, _parse_channels
 
 
 class E2ECurrentDataset(Dataset):

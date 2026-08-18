@@ -1,7 +1,7 @@
 import os
 
 ssh_inputs = ['ssh_mask', 'ssh_wind_mask']
-# ssh_inputs = [ssh_inputs[1]]  # 选择要跑的实验, [0]=ssh_mask, [1]=ssh_wind_mask
+#ssh_inputs = [ssh_inputs[1]]  # 选择要跑的实验, [0]=ssh_mask, [1]=ssh_wind_mask
 
 # SSH 预训练模型路径 (与 ssh_input 一一对应)
 ssh_model_paths = {
@@ -9,9 +9,8 @@ ssh_model_paths = {
     'ssh_wind_mask': '/data/hdy/workspace/SSH-to-Current-Prediction/output/scs/SimVP_Model_seed42/var_ssh_wind_mask_20260813_0114/model_paras.pkl',
 }
 
-# ageo 输入跟随 ssh 输入 (保持一致对比), 如需 lonlat 可单独指定
-ageo_inputs = ['ssh_mask', 'ssh_wind_mask']
-ageo_inputs = [ageo_inputs[1]]
+# ageo 输入固定为 ssh_wind_mask (非地转流需要风场驱动)
+ageo_inputs = ['ssh_wind_mask']
 
 # ============= 公共配置 =============
 ssh_model_name = 'tau'

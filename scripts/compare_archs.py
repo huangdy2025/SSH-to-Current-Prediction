@@ -1,4 +1,4 @@
-"""跨架构对比脚本：分解式 (current_prediction) vs 端到端 (e2e_current)"""
+"""跨架构对比脚本：分解式 (current_prediction) vs 端到端 (e2e_current_prediction)"""
 import os
 import sys
 import re
@@ -36,7 +36,7 @@ class ArchitectureComparator:
         if not self.eval_dir.exists():
             print(f"[WARN] eval dir not found: {self.eval_dir}")
             print("       Please run current_prediction/analyze/analyze.py and "
-                  "e2e_current/analyze/analyze.py first.")
+                  "e2e_current_prediction/analyze/analyze.py first.")
             return self.results
         for npz_file in sorted(self.eval_dir.glob("*.npz")):
             data = np.load(npz_file, allow_pickle=True)

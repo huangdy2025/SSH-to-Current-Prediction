@@ -29,7 +29,7 @@ for st in start_time:
                     for s in shuffle:
 
                         cmd_parts = [
-                            "python3 -m e2e_current.trainers",
+                            "python3 -m e2e_current_prediction.trainers",
                             "--batch_size_train 4",
                             f"--model_name {model_name}",
                             f"--e2e_input {e2e_input}",
