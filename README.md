@@ -236,4 +236,4 @@ This work was conducted at the South China Sea Institute of Oceanology, Chinese 
 
 ## Contact
 
-**Linxiao Huang** — Email: huanglinx@qq.com
+**Daiying Huang** — Email: huangdaiying25@mails.ucas.ac.cn
