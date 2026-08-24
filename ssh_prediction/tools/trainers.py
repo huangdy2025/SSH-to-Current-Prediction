@@ -46,7 +46,7 @@ class Model(BaseMethod):
         targets = targets.clone()
         targets[mask] = torch.nan
         ssh_concate = torch.cat([targets[:, :, :1],  preds[:, :, :1]], dim=2)
-        u, v, w = compute_geostrophic_current(ssh_concate, self.lon, self.lat, if_solid_f= True) #todo
+        u, v, w = compute_geostrophic_current(ssh_concate, self.lon, self.lat, if_solid_f=getattr(self.config, 'if_solid_f', True))
 
         u_true, u_pred = u[:, :, 0], u[:, :, 1]
         v_true, v_pred = v[:, :, 0], v[:, :, 1]

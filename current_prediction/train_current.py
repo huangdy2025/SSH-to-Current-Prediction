@@ -9,8 +9,8 @@ ssh_model_paths = {
     'ssh_wind_mask': '/data/hdy/workspace/SSH-to-Current-Prediction/output/scs/SimVP_Model_seed42/var_ssh_wind_mask_20260813_0114/model_paras.pkl',
 }
 
-# ageo 输入固定为 ssh_wind_mask (非地转流需要风场驱动)
-ageo_inputs = ['ssh_wind_mask']
+# ageo 输入 (非地转流需要风场驱动)
+ageo_inputs = ['ssh_wind_mask', 'ssh_wind_mask_lonlat']
 
 # ============= 公共配置 =============
 ssh_model_name = 'tau'

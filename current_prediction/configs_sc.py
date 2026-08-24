@@ -335,7 +335,7 @@ def get_my_config(args_):
     args.model_name = args.model_name.lower()
 
     # 5. 其他派生属性
-    args.file_name = f'current_{args.ageo_input}'
+    args.file_name = f'current_{args.ssh_input}_{args.ageo_input}'
     if args.is_pinn:
         args.file_name += f'_pinn{args.pinn_lambda}'
     if args.norm:

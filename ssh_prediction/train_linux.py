@@ -33,6 +33,9 @@ model_names = ['tau']
 # pinn_lambdas = [0.7, 0, 0.1, 5]
 pinn_lambdas = [0, 0.7]
 
+solid_fs = [True, False]
+solid_fs = [solid_fs[0]]
+
 loss_ignore_nan = [False, True]
 loss_ignore_nan = [loss_ignore_nan[1]]
 
@@ -57,51 +60,53 @@ for st in start_time:
                                 if model_name != 'predformer' and mask_pred:
                                     continue
                                 for p in pinn_lambdas:
-                                    for l in loss_ignore_nan:
-                                        for s in shuffle:
-                                            for patch in patches:
+                                    for sf in solid_fs:
+                                        for l in loss_ignore_nan:
+                                            for s in shuffle:
+                                                for patch in patches:
 
-                                                cmd_parts = [
-                                                            "python3 -m ssh_prediction.tools.trainers",
-                                                            "--batch_size_train 4",
-                                                            f"--model_name {model_name}",
-                                                            f"--patch_size {patch}",
-                                                            "--gradient_clip",
-                                                            "--gradient_clip_value 1",
-                                                            "--env linux",
-                                                            # "--area indian",
-                                                            "--input_length 10",
-                                                            "--output_length 10"
-                                                            ]
+                                                    cmd_parts = [
+                                                                "python3 -m ssh_prediction.tools.trainers",
+                                                                "--batch_size_train 4",
+                                                                f"--model_name {model_name}",
+                                                                f"--patch_size {patch}",
+                                                                "--gradient_clip",
+                                                                "--gradient_clip_value 1",
+                                                                "--env linux",
+                                                                # "--area indian",
+                                                                "--input_length 10",
+                                                                "--output_length 10"
+                                                                ]
 
-                                                num_runs += 1
-                                                cmd_parts.append(f"--start_time_train {st}")
-                                                print(f"{'*'*40} Run {num_runs} {'*'*40}\n")
-                                                if wind:
-                                                    cmd_parts.append("--need_wind")
-                                                if var == 'ssh':
-                                                    cmd_parts.append("--need_ssh")
-                                                if var == 'uv':
-                                                    cmd_parts.append("--need_uv")
-                                                if mask:
-                                                    cmd_parts.append("--need_mask")
-                                                if mask_pred:
-                                                    cmd_parts.append("--mask_predformer")
+                                                    num_runs += 1
+                                                    cmd_parts.append(f"--start_time_train {st}")
+                                                    print(f"{'*'*40} Run {num_runs} {'*'*40}\n")
+                                                    if wind:
+                                                        cmd_parts.append("--need_wind")
+                                                    if var == 'ssh':
+                                                        cmd_parts.append("--need_ssh")
+                                                    if var == 'uv':
+                                                        cmd_parts.append("--need_uv")
+                                                    if mask:
+                                                        cmd_parts.append("--need_mask")
+                                                    if mask_pred:
+                                                        cmd_parts.append("--mask_predformer")
 
-                                                if g:
-                                                    cmd_parts.append("--gated")
+                                                    if g:
+                                                        cmd_parts.append("--gated")
 
-                                                if p != 0:
-                                                    cmd_parts.append("--is_pinn")
-                                                    cmd_parts.append(f"--pinn_lambda {p}")
-                                                if l:
-                                                    cmd_parts.append("--loss_ignore_nan")
-                                                if s:
-                                                    cmd_parts.append("--shuffle")
+                                                    if p != 0:
+                                                        cmd_parts.append("--is_pinn")
+                                                        cmd_parts.append(f"--pinn_lambda {p}")
+                                                        cmd_parts.append("--if_solid_f" if sf else "--no-if_solid_f")
+                                                    if l:
+                                                        cmd_parts.append("--loss_ignore_nan")
+                                                    if s:
+                                                        cmd_parts.append("--shuffle")
 
-                                                if norm:
-                                                    cmd_parts.append("--norm")
+                                                    if norm:
+                                                        cmd_parts.append("--norm")
 
-                                                cmd = " ".join(cmd_parts)
-                                                os.system(cmd)
-                                                print(f"over\n")
+                                                    cmd = " ".join(cmd_parts)
+                                                    os.system(cmd)
+                                                    print(f"over\n")

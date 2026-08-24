@@ -73,6 +73,10 @@ def parse_args():
 
     parser.add_argument('--is_pinn', action='store_true')
     parser.add_argument('--pinn_lambda', type=float, default=0.)
+    parser.add_argument('--if_solid_f', action=argparse.BooleanOptionalAction, default=True,
+                        help='Use constant f (mean lat). Default True: solid f '
+                             'to suppress geostrophic contribution near equator. '
+                             'Use --no-if_solid_f to disable.')
 
 
     parser.add_argument('--loss_ignore_nan', action='store_true', default=False,

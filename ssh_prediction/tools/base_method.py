@@ -181,6 +181,8 @@ class BaseMethod(ABC):
         if input_desc is not None:
             self.logger.info(f"  Input channels: {input_desc}")
         self.logger.info(f"  pinn: {getattr(self.config, 'pinn_lambda', 0)}")
+        if getattr(self.config, 'is_pinn', False):
+            self.logger.info(f"  if_solid_f: {getattr(self.config, 'if_solid_f', True)}")
         self.logger.info(f"  norm: {getattr(self.config, 'norm', False)}")
         self.logger.info(f"  patch_size: {getattr(self.config, 'patch_size', 'N/A')}")
 
