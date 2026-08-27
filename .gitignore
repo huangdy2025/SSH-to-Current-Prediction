@@ -224,3 +224,6 @@ output/
 *.nc
 *.npy
 *.npz
+
+# Exported conversations (not version controlled)
+导出对话/
