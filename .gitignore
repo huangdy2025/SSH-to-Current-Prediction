@@ -208,7 +208,7 @@ cython_debug/
 .zcode/
 # PyPI configuration file
 .pypirc
-
+surface_current/
 # Marimo
 marimo/_static/
 marimo/_lsp/
