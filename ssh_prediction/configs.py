@@ -268,6 +268,8 @@ def get_my_config(args_, model_config=None):
     args.u10_std = float(stats['u10_std'])
     args.v10_mean = float(stats['v10_mu'])
     args.v10_std = float(stats['v10_std'])
+    args.uo_std = float(stats['uo_std'])   # PINN 地转流归一化用
+    args.vo_std = float(stats['vo_std'])
     args.mask_land = ~stats['ocean_mask']  # True=陆地(invalid)，与原 mask 语义一致
 
 
@@ -289,6 +291,16 @@ def get_my_config(args_, model_config=None):
     if args.need_mask:
         args.input_channels += 1
         args.file_name += '_mask'
+
+    # 实验命名后缀: 恢复历史命名约定 (var_ssh_wind_mask_pinn0.7_norm_...),
+    # 空间变化 f 用 _spatialf 区分, 否则不同配置的输出目录只差时间戳无法辨认
+    if args.is_pinn:
+        args.file_name += f'_pinn{args.pinn_lambda}'
+    if not args.if_solid_f:
+        args.file_name += '_spatialf'
+    if args.norm:
+        args.file_name += '_norm'
+
     args.patched=False
     args.one_seq = False
 

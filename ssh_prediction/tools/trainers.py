@@ -18,6 +18,8 @@ class Model(BaseMethod):
             self.stds = stds
             self.loss_func_pinn = loss_func_pinn
             self.mask_land = mask_land[None, None, None]
+            # 海洋掩膜 (掩膜感知梯度用: 海岸线处的海洋格点只用海洋邻居)
+            self.ocean_mask = ~mask_land
 
     def _compute_loss(self, train_data, step, mask=None, test=False):
         inputs, targets = train_data
@@ -46,15 +48,21 @@ class Model(BaseMethod):
         targets = targets.clone()
         targets[mask] = torch.nan
         ssh_concate = torch.cat([targets[:, :, :1],  preds[:, :, :1]], dim=2)
-        u, v, w = compute_geostrophic_current(ssh_concate, self.lon, self.lat, if_solid_f=getattr(self.config, 'if_solid_f', True))
+        u, v, w = compute_geostrophic_current(
+            ssh_concate, self.lon, self.lat,
+            if_solid_f=getattr(self.config, 'if_solid_f', True),
+            ocean_mask=getattr(self, 'ocean_mask', None)
+        )
 
         u_true, u_pred = u[:, :, 0], u[:, :, 1]
         v_true, v_pred = v[:, :, 0], v[:, :, 1]
 
-        # 标准化
+        # 标准化: stds 为 (ssh_std, u_std, v_std) 元组; 兼容旧标量入参 (仅 ssh_std,
+        # u/v std 回退到 config 中的流场统计量)
         if isinstance(self.stds, (int, float)) or (hasattr(self.stds, 'ndim') and self.stds.ndim == 0):
             ssh_std = float(self.stds) if isinstance(self.stds, (int, float)) else self.stds.item()
-            u_std, v_std = 0.23, 0.23
+            u_std = float(getattr(self.config, 'uo_std', 1.0))
+            v_std = float(getattr(self.config, 'vo_std', 1.0))
         else:
             ssh_std, u_std, v_std = self.stds
         u_norm_pred = (u_pred * ssh_std / u_std)
@@ -148,7 +156,7 @@ if __name__ == '__main__':
     if lon.ndim == 1 and lat.ndim == 1:
         lon, lat = np.meshgrid(lon, lat)
 
-    stds = args.ssh_std
+    stds = (args.ssh_std, args.uo_std, args.vo_std)  # PINN 地转流归一化用 (ssh, u, v)
 
     log_dir = rf"{args.model_savepath}/{model.__class__.__name__}_seed{args.SEED}/{args.file_name}_{time.strftime('%Y%m%d_%H%M')}"
     os.makedirs(log_dir, exist_ok=True)

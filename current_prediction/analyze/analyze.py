@@ -47,10 +47,11 @@ def extract_model_info(parent_dir):
 def parse_folder_name(folder_name):
     """
     从文件夹名解析配置
-    格式: current_{ageo_input}[_pinn{lambda}]_norm_{timestamp}
+    旧格式: current_{ageo_input}[_pinn{lambda}][_norm]_{timestamp}
+    新格式: current_{ssh_input}_{ageo_input}[_pinn{lambda}][_norm]_{timestamp}
     返回: dict with ageo_input, pinn, norm, ssh_input
     """
-    info = {'ageo_input': None, 'pinn': None, 'norm': False, 'ssh_input': None}
+    info = {'ageo_input': None, 'pinn': None, 'norm': False, 'ssh_input': None, 'if_solid_f': True}
 
     name = re.sub(r'_\d{8}_\d{4}$', '', folder_name)
     if name.startswith('current_'):
@@ -60,11 +61,26 @@ def parse_folder_name(folder_name):
         info['norm'] = True
         name = name[:-len('_norm')]
 
+    if name.endswith('_spatialf'):
+        info['if_solid_f'] = False
+        name = name[:-len('_spatialf')]
+
     m = re.search(r'_pinn([\d.]+)$', name)
     if m:
         info['pinn'] = float(m.group(1))
         name = name[:m.start()]
 
+    # 新格式双段命名: {ssh_input}_{ageo_input} (长前缀优先, 避免误切)
+    for ssh_candidate in sorted(VALID_SSH_INPUTS, key=len, reverse=True):
+        prefix = ssh_candidate + '_'
+        if name.startswith(prefix):
+            rest = name[len(prefix):]
+            if rest in VALID_AGEO_INPUTS:
+                info['ssh_input'] = ssh_candidate
+                info['ageo_input'] = rest
+                return info
+
+    # 旧格式单段命名
     info['ageo_input'] = name
     # ssh_input 默认与 ageo_input 一致 (不含 lonlat 时)
     if name in VALID_SSH_INPUTS:
@@ -97,6 +113,7 @@ class CurrentModelEvaluator:
         args_.ageo_input = info['ageo_input'] or 'ssh_wind_mask'
         args_.ssh_model_path = SSH_MODEL_PATHS.get(info['ssh_input'], '')
         args_.norm = info['norm']
+        args_.if_solid_f = info['if_solid_f']
         args_.env = 'linux'
         args_.area = 'scs'
 
@@ -154,17 +171,19 @@ class CurrentModelEvaluator:
             # 反归一化 SSH 到物理量
             pred_ssh_phys = pred_ssh * args.ssh_std + args.ssh_mean
 
-            # 计算地转流
+            # 计算地转流 (掩膜感知差分: 海岸线处的海洋格点只用海洋邻居)
             u_geo, v_geo, f_weight = compute_geostrophic_current_gpu(
                 pred_ssh_phys, lon, lat,
-                if_solid_f=getattr(args, 'if_solid_f', True)
+                if_solid_f=getattr(args, 'if_solid_f', True),
+                ocean_mask=~np.asarray(args.mask_land, dtype=bool)
             )
             u_geo = u_geo[:, :, 0:1]
             v_geo = v_geo[:, :, 0:1]
 
-            # 地转流归一化到与 target 相同的尺度
-            u_geo_norm = (u_geo - args.u_c_mu) / args.u_c_std
-            v_geo_norm = (v_geo - args.v_c_mu) / args.v_c_std
+            # 地转流换算到 target 归一化坐标系: 只除 std 不减 mu
+            # (总流的 -mu 已由网络归一化目标扣除, 重复减 mu 会引入系统性偏置)
+            u_geo_norm = u_geo / args.u_c_std
+            v_geo_norm = v_geo / args.v_c_std
 
             # ageo 模型预测非地转流
             pred_ageo = ageo_model(datax.to(device))  # (B, T_out, 2, H, W)
@@ -411,10 +430,10 @@ class CurrentModelEvaluator:
     def run(self, spatial=False, season='full'):
 
         model_info_list = extract_model_info(self.parent_dir)
-        # 只处理 current_ 开头的文件夹
+        # 只处理 current_ 开头的文件夹 (e2e_ 前缀由 e2e 框架自己的 analyze.py 负责)
         model_info_list = [
             (p, n, f) for p, n, f in model_info_list
-            if 'current' in n.lower()
+            if n.lower().startswith('current')
         ]
         print(f"找到 {len(model_info_list)} 个模型文件，开始处理...")
 
@@ -424,12 +443,23 @@ class CurrentModelEvaluator:
         last_dataset = None
 
         for model_para_path, simple_name, folder_path in model_info_list:
+            # 使用完整文件夹名 (含时间戳) 作为模型名, 避免同配置不同运行的结果互相覆盖
+            model_name = Path(folder_path).name
+
+            # 跳过已评估过的模型
+            if spatial:
+                out_path = os.path.join(self.save_dir, "spatial", f"{model_name}.npz")
+            else:
+                out_path = os.path.join(self.save_dir, f"{model_name}.npz")
+            if os.path.exists(out_path):
+                print(f"跳过 {model_name}: 已存在 {out_path}")
+                continue
+
             print(f"\n{'*' * 50}")
             print(f"处理模型: {simple_name}")
             print(f"模型路径: {model_para_path}")
 
-            folder_name = Path(folder_path).name
-            args = self.build_args(folder_name, season)
+            args = self.build_args(folder_name=model_name, season=season)
             set_all_seeds(args.SEED)
 
             mask_land = torch.from_numpy(args.mask_land)
@@ -448,8 +478,6 @@ class CurrentModelEvaluator:
 
             ssh_model, ageo_model = self.load_models(args, model_para_path)
 
-            # 使用完整文件夹名 (含时间戳) 作为模型名, 避免同配置不同运行的结果互相覆盖
-            model_name = Path(folder_path).name
             if spatial:
                 self.evaluate_one_model_spatial(
                     ssh_model, ageo_model, args, test_dataset,
@@ -472,8 +500,9 @@ class CurrentModelEvaluator:
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
 
-        # Persistence 基准
-        if not spatial and last_args is not None:
+        # Persistence 基准 (已存在则跳过)
+        persistence_path = os.path.join(self.save_dir, "Persistence.npz")
+        if not spatial and last_args is not None and not os.path.exists(persistence_path):
             self.evaluate_persistence(last_args, last_dataset)
 
         self.save_results(spatial=spatial)

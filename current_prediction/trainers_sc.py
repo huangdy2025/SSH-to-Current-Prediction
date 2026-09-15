@@ -46,6 +46,8 @@ class CurrentModel(BaseMethod):
         self.lon, self.lat = lon, lat
         self.stds = stds
         self.mask_land = mask_land[None, None, None]
+        # 海洋掩膜 (掩膜感知梯度用: 海岸线处的海洋格点只用海洋邻居)
+        self.ocean_mask = ~mask_land
 
         # 归一化参数 (用于反归一化后计算地转流)
         self.ssh_mean = ssh_mean
@@ -91,7 +93,8 @@ class CurrentModel(BaseMethod):
             # if_solid_f=False: f 随纬度变化, 赤道附近 f→0 会被 sigmoid 权重抑制
             u_geo, v_geo, f_weight = compute_geostrophic_current_gpu(
                 pred_ssh_phys, self.lon, self.lat,
-                if_solid_f=getattr(self.config, 'if_solid_f', True)
+                if_solid_f=getattr(self.config, 'if_solid_f', True),
+                ocean_mask=self.ocean_mask
             )
             # u_geo, v_geo: (B, T_out, C_ssh, H, W), 取第 0 通道
             u_geo = u_geo[:, :, 0:1]  # (B, T_out, 1, H, W)
@@ -101,9 +104,12 @@ class CurrentModel(BaseMethod):
             pred_ageo = self.model(datax)  # (B, T_out, 2, H, W)
 
             # 4. 总流 = 地转流 + 非地转流
-            # 地转流归一化到与 target 相同的尺度
-            u_geo_norm = (u_geo - self.u_c_mu) / self.u_c_std
-            v_geo_norm = (v_geo - self.v_c_mu) / self.v_c_std
+            # 地转流换算到 target 归一化坐标系: 只除 std 不减 mu。
+            # sigma 是线性缩放、对加法可分配 (各分量各自除再相加); mu 是平移、
+            # 不可分配 —— 总流的 -mu 已由网络的归一化目标 (datay) 扣除一次,
+            # 地转项再减 mu 会重复扣均值, 迫使网络学一个 +mu/std 的补偿偏置。
+            u_geo_norm = u_geo / self.u_c_std
+            v_geo_norm = v_geo / self.v_c_std
 
             # 用 f_weight 加权地转流: 赤道附近 (低纬) 权重→0, 网络负责全部流;
             # 中高纬权重→1, 地转流占主导
@@ -129,7 +135,8 @@ class CurrentModel(BaseMethod):
         # 用预测 SSH 计算地转流
         u_geo_pred, v_geo_pred, w = compute_geostrophic_current_gpu(
             pred_ssh, self.lon, self.lat,
-            if_solid_f=getattr(self.config, 'if_solid_f', True)
+            if_solid_f=getattr(self.config, 'if_solid_f', True),
+            ocean_mask=self.ocean_mask
         )
 
         # 标准化

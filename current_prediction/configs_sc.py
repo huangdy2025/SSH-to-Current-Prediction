@@ -132,9 +132,12 @@ def parse_args():
     parser.add_argument('--pinn_lambda', type=float, default=0.)
 
     # ---- 地转流计算 ----
-    parser.add_argument('--if_solid_f', action='store_true', default=True,
-                        help='Use constant f (mean lat). Default True: solid f '
-                             'to suppress geostrophic contribution near equator')
+    # BooleanOptionalAction: --if_solid_f 用常数 f (与 SSH 预训练一致),
+    # --no-if_solid_f 启用空间变化 f + sigmoid 低纬抑制 (要求 SSH 模型同设置训练)
+    parser.add_argument('--if_solid_f', action=argparse.BooleanOptionalAction, default=True,
+                        help='Use constant f (mean lat). Default True: solid f; '
+                             'False: spatially varying f with sigmoid weight to suppress '
+                             'geostrophic contribution near equator')
 
     # ---- 路径 ----
     parser.add_argument('--model_savepath', type=str,
@@ -338,6 +341,8 @@ def get_my_config(args_):
     args.file_name = f'current_{args.ssh_input}_{args.ageo_input}'
     if args.is_pinn:
         args.file_name += f'_pinn{args.pinn_lambda}'
+    if not args.if_solid_f:
+        args.file_name += '_spatialf'  # 空间变化 f 变体, 与常数 f 实验区分
     if args.norm:
         args.file_name += '_norm'
     args.patched = False

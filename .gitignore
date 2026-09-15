@@ -205,7 +205,7 @@ cython_debug/
 
 # Ruff stuff:
 .ruff_cache/
-
+.zcode/
 # PyPI configuration file
 .pypirc
 

@@ -395,22 +395,144 @@ def compute_f_and_gaussian_weight(lat,theta=2.2):
 
     return f, f_weight
 
-def compute_geostrophic_current(pred,  lon, lat, if_solid_f=False):
+def compute_geostrophic_current(pred, lon, lat, if_solid_f=False, ocean_mask=None):
     """
     基于空间 f 计算地转流速度（物理单位 m/s）。
+    ocean_mask: (H, W) bool，传入时使用掩膜感知差分（海岸线处的海洋格点只用
+               海洋邻居求梯度，陆地值不参与）；不传则保持 Sobel 旧路径（兼容）。
     """
     g = 9.81  # 重力加速度
 
-    f, f_weight = compute_f_and_sigmoid_weight(lat, if_solid_f)
+    # 关键字传参: 原代码位置传参 compute_f_and_sigmoid_weight(lat, if_solid_f) 把
+    # if_solid_f 传进了 k (签名 (lat, k=2, phi0=5, if_solid_f=False)), 导致历史上
+    # "if_solid_f=True" 的训练实际运行的是空间变化 f + sigmoid(k=True)
+    f, f_weight = compute_f_and_sigmoid_weight(lat, if_solid_f=if_solid_f)
     f = f.to(pred.device)
 
-    grad_x, grad_y = compute_gradients_sobel(pred, lon, lat, R_E=6.371e6) #todo
-    # grad_x, grad_y = compute_gradients_exact(pred, lon, lat)
+    if ocean_mask is not None:
+        grad_x, grad_y = compute_gradients_masked(pred, lon, lat, ocean_mask, R_E=6.371e6)
+    else:
+        grad_x, grad_y = compute_gradients_sobel(pred, lon, lat, R_E=6.371e6)
     # 地转流分量
     u_geo = - (g / f) * grad_y
     v_geo = (g / f) * grad_x
 
     return u_geo, v_geo, f_weight
+
+
+# ---------------------------------------------------------------------------
+# 掩膜感知梯度算子：海岸线处的海洋格点只用海洋邻居差分
+# ---------------------------------------------------------------------------
+_MASKED_GRAD_CACHE = {}
+
+
+def _reduce_to_1d(lon, lat):
+    """规则网格的 2D 经纬度压缩为 1D（与 Sobel/Exact 版本保持一致的假设）"""
+    if lon.ndim == 2 and np.all(lon == lon[0, :][None, :]) and np.all(lat == lat[:, 0][:, None]):
+        return lon[0, :], lat[:, 0]
+    return lon, lat
+
+
+def _build_masked_grad_tables(ocean, lon, lat, R_E=6371000.0):
+    """
+    预计算掩膜感知差分表（海洋掩膜静态，全程只构建一次）
+
+    规则：海洋格点在某一方向上——
+      两侧邻居皆海洋 -> 中心差分（二阶精度）
+      仅一侧为海洋   -> 该侧单侧差分（一阶精度）
+      无海洋邻居     -> 该方向梯度置 0（该格点交给网络学习）
+    区域边缘按"无邻居"处理，自动退化为用真实数据的单侧差分（取代 replicate padding）。
+
+    ocean: (H, W) bool；lon/lat: 1D
+    返回 flat (H*W,) numpy 表：idx_xl/idx_xr/inv_x, idx_yl/idx_yr/inv_y
+    """
+    H, W = ocean.shape
+
+    # 物理格距：dx 随纬度变化，dy 常数（符号与 Sobel 版约定一致，沿索引增大方向）
+    dy = (lat[1] - lat[0]) * (np.pi / 180.0) * R_E
+    dx = (lon[1] - lon[0]) * (np.pi / 180.0) * R_E * np.cos(np.deg2rad(lat))  # (H,)
+
+    # 邻居可用性（区域外视为不可用）
+    ocean_left = np.zeros_like(ocean);  ocean_left[:, 1:] = ocean[:, :-1]
+    ocean_right = np.zeros_like(ocean); ocean_right[:, :-1] = ocean[:, 1:]
+    ocean_up = np.zeros_like(ocean);    ocean_up[1:, :] = ocean[:-1, :]
+    ocean_down = np.zeros_like(ocean);  ocean_down[:-1, :] = ocean[1:, :]
+
+    jj, ii = np.meshgrid(np.arange(W), np.arange(H))  # jj: 列, ii: 行
+    flat_self = (ii * W + jj)
+
+    # ---- x 方向（经度）----
+    bothx = ocean & ocean_left & ocean_right
+    onlylx = ocean & ocean_left & ~ocean_right
+    onlyrx = ocean & ~ocean_left & ocean_right
+    valid_x = bothx | onlylx | onlyrx
+    col_l = np.where(onlyrx, jj, jj - 1)   # only_r 左侧取自身
+    col_r = np.where(onlylx, jj, jj + 1)   # only_l 右侧取自身
+    dist_x = np.where(bothx, 2.0 * dx[:, None], dx[:, None])
+    idx_xl = np.where(valid_x, ii * W + col_l, flat_self)
+    idx_xr = np.where(valid_x, ii * W + col_r, flat_self)
+    inv_x = np.where(valid_x, 1.0 / np.where(valid_x, dist_x, 1.0), 0.0)
+
+    # ---- y 方向（纬度）----
+    bothy = ocean & ocean_up & ocean_down
+    onlyuy = ocean & ocean_up & ~ocean_down
+    onlydy = ocean & ~ocean_up & ocean_down
+    valid_y = bothy | onlyuy | onlydy
+    row_l = np.where(onlydy, ii, ii - 1)   # only_d 上侧取自身
+    row_r = np.where(onlyuy, ii, ii + 1)   # only_u 下侧取自身
+    dist_y = np.where(bothy, 2.0 * dy, dy)
+    idx_yl = np.where(valid_y, row_l * W + jj, flat_self)
+    idx_yr = np.where(valid_y, row_r * W + jj, flat_self)
+    inv_y = np.where(valid_y, 1.0 / np.where(valid_y, dist_y, 1.0), 0.0)
+
+    return {
+        'idx_xl': idx_xl.astype(np.int64).ravel(),
+        'idx_xr': idx_xr.astype(np.int64).ravel(),
+        'inv_x': inv_x.astype(np.float32).ravel(),
+        'idx_yl': idx_yl.astype(np.int64).ravel(),
+        'idx_yr': idx_yr.astype(np.int64).ravel(),
+        'inv_y': inv_y.astype(np.float32).ravel(),
+    }
+
+
+def compute_gradients_masked(sla, lon, lat, ocean_mask, R_E=6371000.0):
+    """
+    掩膜感知差分梯度：海洋格点只使用海洋邻居（中心/单侧差分），陆地值不参与任何
+    海洋格点的梯度；无海洋邻居的格点该方向梯度为 0（若场在陆地/无效格点上为 NaN，
+    则这些格点的梯度为 NaN，由下游 NaN 忽略损失处理）。
+
+    sla: (B, T, C, H, W)；ocean_mask: (H, W) bool（numpy/torch 均可）
+    lon/lat: 1D 或规则 2D
+    """
+    ocean = ocean_mask.detach().cpu().numpy() if torch.is_tensor(ocean_mask) else np.asarray(ocean_mask)
+    ocean = ocean.astype(bool)
+    lon1, lat1 = _reduce_to_1d(np.asarray(lon), np.asarray(lat))
+
+    key = (ocean.tobytes(), lon1.tobytes(), lat1.tobytes(), R_E, str(sla.device))
+    tables = _MASKED_GRAD_CACHE.get(key)
+    if tables is None:
+        np_tables = _build_masked_grad_tables(ocean, lon1, lat1, R_E)
+        device = sla.device
+        tables = {
+            k: torch.from_numpy(v).to(device=device, dtype=torch.long if k.startswith('idx') else torch.float32)
+            for k, v in np_tables.items()
+        }
+        _MASKED_GRAD_CACHE[key] = tables
+
+    B, T, C, H, W = sla.shape
+    # 用 float32 计算，避免 fp16 下 1/dx 量级 (~1e-4) 的精度损失
+    M = B * T * C
+    flat = sla.reshape(M, H * W).float()
+    # gather 要求 index 与输入在非聚合维度同形，expand 为零拷贝视图
+    idx_xl = tables['idx_xl'].unsqueeze(0).expand(M, -1)
+    idx_xr = tables['idx_xr'].unsqueeze(0).expand(M, -1)
+    idx_yl = tables['idx_yl'].unsqueeze(0).expand(M, -1)
+    idx_yr = tables['idx_yr'].unsqueeze(0).expand(M, -1)
+
+    grad_x = (torch.gather(flat, 1, idx_xr) - torch.gather(flat, 1, idx_xl)) * tables['inv_x'].unsqueeze(0)
+    grad_y = (torch.gather(flat, 1, idx_yr) - torch.gather(flat, 1, idx_yl)) * tables['inv_y'].unsqueeze(0)
+
+    return grad_x.view(B, T, C, H, W), grad_y.view(B, T, C, H, W)
 
 
 def reverse_schedule_sampling(itr,  total_length, input_length, img_shape, args, reverse=True, mode='train'):

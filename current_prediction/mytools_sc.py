@@ -8,6 +8,7 @@ from ssh_prediction.mytools import (
     compute_geostrophic_current,
     compute_gradients_exact,
     compute_gradients_sobel,
+    compute_gradients_masked,
     compute_f_and_sigmoid_weight,
     MaskPearsonCorr,
     MaskPearsonCorrNP,
@@ -45,10 +46,12 @@ class MSELossIgnoreNaNCurrent(nn.Module):
         return loss
 
 
-def compute_geostrophic_current_gpu(pred, lon, lat, if_solid_f=True):
+def compute_geostrophic_current_gpu(pred, lon, lat, if_solid_f=True, ocean_mask=None):
     """
     GPU 版地转流计算，直接在 GPU 上执行梯度计算
     pred: (B, T, 2, H, W) - [true_ssh, pred_ssh] concatenated along time dim
+    ocean_mask: (H, W) bool，传入时使用掩膜感知差分（海岸线处的海洋格点只用海洋
+               邻居求梯度，陆地值不参与）；不传则保持 Sobel 旧路径
     返回 u, v (B, T, 2, H, W), w (1, 1, 1, H, W)
     """
     g = 9.81
@@ -56,7 +59,10 @@ def compute_geostrophic_current_gpu(pred, lon, lat, if_solid_f=True):
     f = f.to(pred.device)
     f_weight = f_weight.to(pred.device)
 
-    grad_x, grad_y = compute_gradients_sobel(pred, lon, lat, R_E=6.371e6)
+    if ocean_mask is not None:
+        grad_x, grad_y = compute_gradients_masked(pred, lon, lat, ocean_mask, R_E=6.371e6)
+    else:
+        grad_x, grad_y = compute_gradients_sobel(pred, lon, lat, R_E=6.371e6)
 
     u_geo = - (g / f) * grad_y
     v_geo = (g / f) * grad_x

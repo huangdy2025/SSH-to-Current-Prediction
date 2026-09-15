@@ -22,6 +22,7 @@ PATTERNS = {
     "total_parameters": r"Total Parameters:\s*([\d,]+)",
     "norm": r"norm:\s*(\S+)",
     "pinn": r"pinn:\s*(\S+)",
+    "ssh_model_input": r"SSH model input:\s*(\S+)",
     "ssh_input": r"ssh_input:\s*(\S+)",
 }
 
@@ -30,16 +31,21 @@ PATTERNS = {
 # 文件夹名解析
 # ==============================
 
-def parse_folder_name(folder):
-    """从文件夹名解析 ageo_input, pinn, norm 信息
+VALID_SSH_INPUTS = ['ssh_mask', 'ssh_wind_mask']
+VALID_AGEO_INPUTS = ['ssh_mask', 'ssh_wind_mask', 'ssh_wind_mask_lonlat']
 
-    格式: current_{ageo_input}[_pinn{lambda}][_norm]_{timestamp}
+
+def parse_folder_name(folder):
+    """从文件夹名解析 ssh_input, ageo_input, pinn, norm 信息
+
+    旧格式: current_{ageo_input}[_pinn{lambda}][_norm]_{timestamp}
     例如: current_ssh_wind_mask_norm_20260815_1234
-         -> ageo_input=ssh_wind_mask, norm=True
-    例如: current_ssh_wind_mask_pinn0.7_norm_20260815_1234
-         -> ageo_input=ssh_wind_mask, pinn=0.7, norm=True
+         -> ageo_input=ssh_wind_mask, ssh_input=ssh_wind_mask, norm=True
+    新格式: current_{ssh_input}_{ageo_input}[_pinn{lambda}][_norm]_{timestamp}
+    例如: current_ssh_mask_ssh_wind_mask_lonlat_norm_20260820_0033
+         -> ssh_input=ssh_mask, ageo_input=ssh_wind_mask_lonlat, norm=True
     """
-    info = {"ageo_input": None, "pinn": None, "norm": None}
+    info = {"ssh_input": None, "ageo_input": None, "pinn": None, "norm": None, "if_solid_f": None}
 
     name = folder
 
@@ -55,14 +61,35 @@ def parse_folder_name(folder):
         info["norm"] = "True"
         name = name[:-len("_norm")]
 
+    # 检查 _spatialf 后缀 (空间变化 f 变体)
+    if name.endswith("_spatialf"):
+        info["if_solid_f"] = "False"
+        name = name[:-len("_spatialf")]
+
     # 检查 _pinn{value}
     pinn_match = re.search(r"_pinn([\d.]+)$", name)
     if pinn_match:
         info["pinn"] = pinn_match.group(1)
         name = name[:pinn_match.start()]
 
-    # 剩余部分是 ageo_input
-    info["ageo_input"] = name if name else None
+    # 新格式双段命名: {ssh_input}_{ageo_input} (长前缀优先, 避免误切)
+    for ssh_candidate in sorted(VALID_SSH_INPUTS, key=len, reverse=True):
+        prefix = ssh_candidate + "_"
+        if name.startswith(prefix):
+            rest = name[len(prefix):]
+            if rest in VALID_AGEO_INPUTS:
+                info["ssh_input"] = ssh_candidate
+                info["ageo_input"] = rest
+                return info
+
+    # 旧格式单段命名
+    if not name:
+        return info
+    info["ageo_input"] = name
+    if name in VALID_SSH_INPUTS:
+        info["ssh_input"] = name
+    elif name in VALID_AGEO_INPUTS:
+        info["ssh_input"] = name.replace("_lonlat", "")
 
     return info
 
@@ -95,7 +122,6 @@ def parse_log_file(log_file):
             info["norm"] = folder_info["norm"]
         if folder_info["pinn"] is not None:
             info["pinn"] = folder_info["pinn"]
-
         with open(log_file, "r", encoding="utf-8") as f:
             content = f.read()
 
@@ -129,6 +155,11 @@ def parse_log_file(log_file):
                 continue
 
             info[key] = value
+
+        # ---------- ssh_input: 日志优先, 回退文件夹名 ----------
+        # 新日志记录 "SSH model input: xxx" (08-19 之后), 旧日志无此行
+        if info["ssh_input"] is None:
+            info["ssh_input"] = info["ssh_model_input"] or folder_info["ssh_input"]
 
         # ---------- 确定模型类型 ----------
         info["final_model_type"] = info["model_type"] or info["model"]
